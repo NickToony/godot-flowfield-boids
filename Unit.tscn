@@ -1,0 +1,30 @@
+[gd_scene load_steps=5 format=3 uid="uid://c8krrd27vaca0"]
+
+[ext_resource type="Script" path="res://Unit.cs" id="1_qpyjs"]
+[ext_resource type="Texture2D" uid="uid://bgaj42e2g03au" path="res://assets/icon.svg" id="2_3totk"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_bkbfv"]
+radius = 20.0
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_e6e8g"]
+radius = 100.0
+
+[node name="Unit" type="RigidBody2D"]
+collision_mask = 0
+gravity_scale = 0.0
+script = ExtResource("1_qpyjs")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+scale = Vector2(0.25, 0.25)
+texture = ExtResource("2_3totk")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_bkbfv")
+one_way_collision_margin = 36.7
+
+[node name="Area2D" type="Area2D" parent="."]
+collision_layer = 0
+monitorable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Area2D"]
+shape = SubResource("CircleShape2D_e6e8g")
