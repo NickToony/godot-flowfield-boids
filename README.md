@@ -31,7 +31,7 @@ The approach in this project would be suitable for an RTS or Vampire Survivors g
 # TODO
 
 - Investigate efficient ways to reduce overlap and jitter
-- Use floats to have less binary directions
+- Use floats to have more gradual pathing
 
 # Credits
 
