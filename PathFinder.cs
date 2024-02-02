@@ -1,62 +1,42 @@
 using Godot;
-using System;
-using System.Collections;
 using System.Collections.Generic;
+using kingdoms.components.camera;
 
 public partial class PathFinder : Node2D
 {
-    private static Vector2I UP_LEFT = Vector2I.Left + Vector2I.Up;
-    private static Vector2I UP_RIGHT = Vector2I.Right + Vector2I.Up;
-    private static Vector2I DOWN_LEFT = Vector2I.Left + Vector2I.Down;
-    private static Vector2I DOWN_RIGHT = Vector2I.Right + Vector2I.Down;
-    private static Vector2I UP = Vector2I.Up;
-    private static Vector2I DOWN = Vector2I.Down;
-    private static Vector2I LEFT = Vector2I.Left;
-    private static Vector2I RIGHT = Vector2I.Right;
+    [Export] private Label _debugLabel;
+    [Export] private Label _performanceLabel;
     
+    enum DebugMode {
+        None,
+        All,
+        Cost,
+        Integration,
+        Flow,
+    }
     
     private Map _map;
-    private List<int> _costField;
+    
+    private int[] _costField;
     private int[] _integrationField;
     private Vector2I[] _flowField;
-    private bool _debugRedraw = true;
-    private bool _debug = true;
+
     private Vector2I _previousTarget = Vector2I.Zero;
     private Vector2I _target = Vector2I.Zero;
+    
+    private bool _debugRedraw = true;
+    private DebugMode _debugMode = DebugMode.None;
 
-    private float _diagWeight = (float) Math.Sqrt(2) - 1;
-    
-    public static List<Vector2I> DirectNeighbours = new List<Vector2I>()
-    {
-        LEFT,
-        DOWN,
-        UP,
-        RIGHT,
-        // UP_LEFT,
-        // UP_RIGHT,
-        // DOWN_LEFT,
-        // DOWN_RIGHT,
-    };
-    
-    public static List<Vector2I> AllNeighbours = new List<Vector2I>()
-    {
-        LEFT,
-        DOWN,
-        UP,
-        RIGHT,
-        UP_LEFT,
-        UP_RIGHT,
-        DOWN_LEFT,
-        DOWN_RIGHT,
-    };
+    private long _lastIntegrationTime = 0;
+    private long _lastFlowFieldTime = 0;
+    private long _totalTime;
 
     public override void _Ready()
     {
         _map = GetParent().GetNode<Map>("Map");
+        _costField = new int[_map.MapSize.X * _map.MapSize.Y];
         _integrationField = new int[_map.MapSize.X * _map.MapSize.Y];
         _flowField = new Vector2I[_map.MapSize.X * _map.MapSize.Y];
-
-        GenerateCostField();
     }
 
     public override void _Process(double delta)
@@ -65,17 +45,33 @@ public partial class PathFinder : Node2D
         {
             _target = _map.LocalToMap(GetGlobalMousePosition());
         }
+
+        if (Input.IsActionJustPressed("debug_toggle"))
+        {
+            _debugMode += 1;
+            if (_debugMode > DebugMode.Flow)
+            {
+                _debugMode = DebugMode.None;
+            }
+            
+            _debugRedraw = true;
+        }
         
-        if (_debug && _debugRedraw)
+        if (_debugRedraw)
         {
             QueueRedraw();
             _debugRedraw = false;
+            
+            if (_debugLabel != null)
+            {
+                _debugLabel.Text = "(" + _debugMode + ")";
+            }
         }
 
-        if (_map.Changed)
+        if (_map.MapChanged)
         {
             GenerateCostField();
-            _map.Changed = false;
+            _map.MapChanged = false;
             _previousTarget = Vector2I.Zero;
         }
 
@@ -83,25 +79,29 @@ public partial class PathFinder : Node2D
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
             GenerateIntegrationField();
-            var timeForIntegration = watch.ElapsedMilliseconds;
+            _lastIntegrationTime = watch.ElapsedMilliseconds;
             GenerateFlowField();
-            var timeForFlowField = watch.ElapsedMilliseconds - timeForIntegration;
             watch.Stop();
+            _totalTime = watch.ElapsedMilliseconds;
+            _lastFlowFieldTime = watch.ElapsedMilliseconds - _lastIntegrationTime;
             _previousTarget = _target;
-            GD.Print("Time for Integration: " + timeForIntegration);
-            GD.Print("Time for Flow Field: " + timeForFlowField);
+        }
+
+        if (_performanceLabel != null)
+        {
+            _performanceLabel.Text = $"Integration: {_lastIntegrationTime}ms\nFlow Field: {_lastFlowFieldTime}ms\nTotal: {_totalTime}ms";
         }
         
     }
 
     public void GenerateCostField()
     {
-        _costField = new List<int>(_map.MapSize.X * _map.MapSize.Y);
         for (var x = 0; x < _map.MapSize.X; x += 1)
         {
             for (var y = 0; y < _map.MapSize.Y; y += 1)
             {
-                var cell = _map.GetCellAtlasCoords(0, new Vector2I(x, y));
+                var coords = new Vector2I(x, y);
+                var cell = _map.GetCellAtlasCoords(0, coords);
                 var cost = cell.X switch
                 {
                     1 => 3,
@@ -111,9 +111,9 @@ public partial class PathFinder : Node2D
 
                 if (cost == 1)
                 {
-                    foreach (var neighbour in AllNeighbours)
+                    foreach (var neighbour in Constants.AllNeighbours)
                     {
-                        if (_map.GetCellAtlasCoords(0, new Vector2I(x, y) + neighbour).X == 2)
+                        if (_map.GetCellAtlasCoords(0, coords + neighbour).X == 2)
                         {
                             cost += 5;
                             break;
@@ -121,7 +121,7 @@ public partial class PathFinder : Node2D
                     }
                 }
 
-                _costField.Add(cost);
+                _costField[Vector2ToIndex(coords)] = cost;
             }
         }
 
@@ -138,10 +138,10 @@ public partial class PathFinder : Node2D
         var highestCost = 0;
         Vector2I? highestNeighbour = null;
 
-        foreach (var neighbour in AllNeighbours)
+        foreach (var neighbour in Constants.AllNeighbours)
         {
             var neighbourIndex = Vector2ToIndex(neighbour + gridPos);
-            if (neighbourIndex < 0 || neighbourIndex > _costField.Count - 1) continue;
+            if (neighbourIndex < 0 || neighbourIndex > _costField.Length - 1) continue;
             var cost = _costField[neighbourIndex];
             if (cost > highestCost)
             {
@@ -169,11 +169,10 @@ public partial class PathFinder : Node2D
         
         while (openList.Count > 0)
         {
-
             var current = openList.Dequeue();
             var currentIndex = Vector2ToIndex(current);
             var currentIntegration = _integrationField[currentIndex];
-            foreach (var neighbour in DirectNeighbours)
+            foreach (var neighbour in Constants.DirectNeighbours)
             {
                 var neighbourPoint = neighbour + current;
                 var neighbourIndex = Vector2ToIndex(neighbourPoint);
@@ -182,10 +181,9 @@ public partial class PathFinder : Node2D
                 
                 var neighbourIntegration = _integrationField[neighbourIndex];
                 var cost = _costField[neighbourIndex];
-                
-                
+
+                if (cost >= 255) continue;
                 if (neighbourIntegration <= currentIntegration + cost) continue;
-                // if (neighbourIntegration != 999) continue;
                 
                 _integrationField[neighbourIndex] = currentIntegration + cost;
                 openList.Enqueue(neighbourPoint);
@@ -195,7 +193,7 @@ public partial class PathFinder : Node2D
         _debugRedraw = true;
     }
 
-    public Vector2 GetDirection(Vector2 position)
+    public Vector2I GetDirection(Vector2 position)
     {
         if (_flowField == null) return Vector2I.Zero;
 
@@ -213,7 +211,7 @@ public partial class PathFinder : Node2D
                 var current = new Vector2I(x, y);
                 var currentIndex = Vector2ToIndex(current);
                 float lowestCost = 999;
-                foreach (var neighbour in AllNeighbours)
+                foreach (var neighbour in Constants.AllNeighbours)
                 {
                     var index = Vector2ToIndex(neighbour + current);
                     if (index < 0 || index > _integrationField.Length - 1) continue;
@@ -221,7 +219,7 @@ public partial class PathFinder : Node2D
                     var cost = (float) _integrationField[index];
                     if (neighbour.X == 0 || neighbour.Y == 0)
                     {
-                        cost += _diagWeight;
+                        cost += Constants.DiagWeight;
                     }
                     if (cost < lowestCost)
                     {
@@ -245,7 +243,7 @@ public partial class PathFinder : Node2D
 
     public override void _Draw()
     {
-        if (!_debug) return;
+        if (_debugMode == DebugMode.None) return;
         
         
         for (var x = 0; x < _map.MapSize.X; x += 1)
@@ -255,10 +253,29 @@ public partial class PathFinder : Node2D
                 var index = Vector2ToIndex(new Vector2I(x, y));
                 var cost = _costField[index];
                 var integration = _integrationField != null ? _integrationField[index] : -1;
-                var text = $"{cost} / {integration}";
-                DrawString(ThemeDB.FallbackFont, new Vector2I(x, y + 1) * 32, text, HorizontalAlignment.Left, -1f, 8);
+
+                var text = "";
+                switch (_debugMode)
+                {
+                    case DebugMode.All:
+                        text = $"{cost} / {integration}";
+                        break;
+                    case DebugMode.Cost:
+                        text = $"{cost}";
+                        break;
+                    case DebugMode.Integration:
+                        text = $"{integration}";
+                        break;
+                    
+                }
+
+                if (text.Length > 0)
+                {
+                    DrawString(ThemeDB.FallbackFont, new Vector2I(x, y + 1) * 32, text, HorizontalAlignment.Left, -1f, 8);
+                }
                 
-                if (_flowField != null)
+                
+                if (_flowField != null && (_debugMode == DebugMode.All || _debugMode == DebugMode.Flow))
                 {
                     var flow = _flowField[index];
                     var middle = (new Vector2I(x, y) * 32) + new Vector2(16, 16);
@@ -274,7 +291,7 @@ public partial class PathFinder : Node2D
     {
         if (_costField == null) return 255;
         var index = Vector2ToIndex(_map.LocalToMap(position));
-        if (index < 0 || index > _costField.Count - 1) return 255;
+        if (index < 0 || index > _costField.Length - 1) return 255;
         return _costField[index];
     }
 }

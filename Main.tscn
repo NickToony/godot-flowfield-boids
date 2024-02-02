@@ -29,5 +29,28 @@ script = ExtResource("3_8i6yk")
 [node name="Camera2D" type="Camera2D" parent="."]
 script = ExtResource("4_6bb7u")
 
-[node name="PathFinder" type="Node2D" parent="."]
+[node name="PathFinder" type="Node2D" parent="." node_paths=PackedStringArray("_debugLabel", "_performanceLabel")]
 script = ExtResource("5_qwt2b")
+_debugLabel = NodePath("../CanvasLayer/DebugMode")
+_performanceLabel = NodePath("../CanvasLayer/Performance")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="Label" type="Label" parent="CanvasLayer"]
+offset_right = 40.0
+offset_bottom = 23.0
+text = "WASD to move Camera, Scroll wheel to zoom
+Left click to place unit, Right click to set goal
+Change tile at mouse: 1 (Grass), 2 (Sand), 3 (Wall)
+Space to toggle debug mode"
+
+[node name="DebugMode" type="Label" parent="CanvasLayer"]
+offset_left = 231.0
+offset_top = 79.0
+offset_right = 271.0
+offset_bottom = 102.0
+
+[node name="Performance" type="Label" parent="CanvasLayer"]
+offset_top = 120.0
+offset_right = 40.0
+offset_bottom = 143.0

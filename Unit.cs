@@ -6,17 +6,25 @@ public partial class Unit : RigidBody2D
     private PathFinder _pathFinder;
     private Area2D _area2D;
     private Sprite2D _sprite;
-    private List<Unit> _nearby = new();
+    
     private Vector2 _velocity = new Vector2();
-    private float _avoidDistance = 32;
-    private float _speed = 2;
-    private int _radius = 100;
-    private float _cohesionForce = 0f;
-    private float _alignForce = 0.2f;
-    private float _separationForce = 1f;
-    private float _mouseFollowForce = 0.8f;
+    private float _speed = 2; // pixels per physics frame
+    private int _radius = 50; // radius to consider another unit as part of flock
+    private float _avoidDistance = 32; // distance to gently push other units away
+    private float _spriteSmoothing = 0.8f; // smooth out jitter
+    
+    private float _cohesionForce = 0f; // cohesion wasn't super useful here
+    private float _alignForce = 0.4f; // Stops units constantly walking into each other
+    private float _separationForce = 0.4f; // Force units apart (not always possible)
+    private float _mouseFollowForce = 0.4f; // Path following force. We can be lenient because flow field compensates
+
+    private readonly List<Unit> _nearby = new();
+    
     private bool _isOnWall = false;
     private Vector2 _drawPos = new();
+    private Vector2 _alignVector = new();
+    private Vector2 _cohesionVector = new();
+    private Vector2 _separationVector = new();
     
     public override void _Ready()
     {
@@ -47,90 +55,90 @@ public partial class Unit : RigidBody2D
 
     public override void _PhysicsProcess(double delta)
     {
-        _drawPos = (_drawPos * 0.8f) + (Position * 0.2f);
+        _drawPos = (_drawPos * _spriteSmoothing) + (Position * (1 - _spriteSmoothing));
         
-        var flockStatus = GetFlockStatus();
+        UpdateFlock();
 
-        // _isOnWall = _pathFinder.GetCost(Position) >= 255;
-        var mouseVector = _pathFinder.GetDirection(Position) * _speed * _mouseFollowForce;
-        var cohesionVector = flockStatus[0] * _cohesionForce;
-        var alignVector = flockStatus[1] * _alignForce;
-        var separationVector = flockStatus[2] * _separationForce;
-        var boidForces = cohesionVector + alignVector + separationVector;
+        // Direction from flow field
+        var pathDirection = (Vector2) _pathFinder.GetDirection(Position);
+        // Calculate path follow force
+        var mouseVector = pathDirection * _speed * _mouseFollowForce;
+        var cohesionVector = _cohesionVector * _cohesionForce; // force to keep units together
+        var alignVector = _alignVector * _alignForce; // force to align units
+        var separationVector = _separationVector * _separationForce; // force to push units apart
+        var boidForces = cohesionVector + alignVector + separationVector; // combined to become boids calc
 
+        // Movement velocity before walls
+        _velocity = mouseVector + boidForces;
+        
         _isOnWall = false;
 
-        _velocity = mouseVector + boidForces;
-
-        Modulate = Colors.White;
         var highestCostNearby = _pathFinder.GetHighestCostAround(Position);
+        // If we're near a wall
         if (highestCostNearby is { neighbour: not null, cost: >= 255 })
         {
-            var loopPos = Position + (highestCostNearby.neighbour.Value * 16);
-            
-            var obstaclePosition = loopPos;
-            var obstacleDir = obstaclePosition.DirectionTo(Position);
-            var obstacleSpeed = _speed;
-            var multiplier = 1f;
-            _velocity += obstacleDir * obstacleSpeed * multiplier;
+            // Push away from the direction of wall
+            var obstaclePosition = Position + (highestCostNearby.neighbour.Value * 16);
+            var directionFromObstacle = obstaclePosition.DirectionTo(Position);
+            _velocity += directionFromObstacle * _speed;
 
+            // Flock logic may adjust
             _isOnWall = true;
         }
                 
 
-        Position = Position.MoveToward(Position + _velocity, _speed);
+        Position = Position.MoveToward(Position + _velocity * 10, _speed);
+        // Position = Position + (_velocity.Normalized() * _speed);
+
     }
     
-    private Vector2[] GetFlockStatus()
+    private void UpdateFlock()
     {
-        var centerVector = Vector2.Zero;
         var flockCenter = Vector2.Zero;
-        var alignVector = Vector2.Zero;
-        var avoidVector = Vector2.Zero;
+        _cohesionVector = Vector2.Zero;
+        _alignVector = Vector2.Zero;
+        _separationVector = Vector2.Zero;
 
         var count = 0;
         foreach (var neighbour in _nearby)
         {
+            // Don't count yourself
             if (neighbour == this) continue;
 
             var neighbourPos = neighbour.Position;
 
             count += 1;
-            alignVector += neighbour._velocity;
+            _alignVector += neighbour._velocity;
             flockCenter += neighbourPos;
 
             var distanceToNeighbour = Position.DistanceTo(neighbourPos);
 
-            if (!(distanceToNeighbour < _avoidDistance)) continue;
+            if (distanceToNeighbour > _avoidDistance) continue;
 
             if (distanceToNeighbour > 0)
             {
                 var speed = _speed * (_avoidDistance / distanceToNeighbour);
+                // If we/they are on a wall, we want to avoid shoving them further into the wall
                 var multiplier = _isOnWall ? 0.5f : (neighbour._isOnWall ? 2 : 1);
-                avoidVector -= (neighbourPos - Position).Normalized() * speed * multiplier;
+                _separationVector -= (neighbourPos - Position).Normalized() * speed * multiplier;
             }
             else
             {
-                // No point generating an avoid distance here
-                avoidVector -= new Vector2(0, 1).Rotated(GetIndex()) * _avoidDistance * 10;
+                // We're exactly on top of the other neighbour
+                // You could rotate to a random direction here, but that wouldn't be deterministic
+                _separationVector -= new Vector2(0, 1).Rotated(GetIndex()) * _avoidDistance * 10;
             }
         }
 
-        if (count > 0)
-        {
-            alignVector /= count;
-            flockCenter /= count;
+        // If no flockmates met criteria, no further calculations required
+        if (count <= 0) return;
+        
+        _alignVector /= count;
+        flockCenter /= count;
 
-            var centerDir = Position.DirectionTo(flockCenter);
-            var centerSpeed = _speed * (Position.DistanceTo(flockCenter) / _radius);
-            centerVector = centerDir * centerSpeed;
-        }
-
-        return new[]
-        {
-            centerVector,
-            alignVector,
-            avoidVector,
-        };
+        // We want to move towards the center of our flockmates
+        var centerDir = Position.DirectionTo(flockCenter);
+        var centerSpeed = _speed * (Position.DistanceTo(flockCenter) / _radius);
+        _cohesionVector = centerDir * centerSpeed;
     }
 }

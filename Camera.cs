@@ -1,7 +1,5 @@
 using Godot;
 
-namespace kingdoms.components.camera;
-
 public partial class Camera : Camera2D
 {
     [Export] private float _speed = 5f;
@@ -10,13 +8,6 @@ public partial class Camera : Camera2D
     [Export] private float _maxZoom = 2.0f;
 
     private float? _targetZoom = null;
-    // private Polygon2D _background;
-
-    public override void _Ready()
-    {
-        // _background = GetNode<Polygon2D>("Background");
-        // UpdateBackground();
-    }
 
     public override void _Process(double delta)
     {
@@ -56,7 +47,6 @@ public partial class Camera : Camera2D
 
         var clamped = Mathf.Clamp(Zoom.X, _minZoom, _maxZoom);
         Zoom = new Vector2(clamped, clamped);
-        UpdateBackground();
     }
 
     public void SetTargetZoom(float zoom)
@@ -67,12 +57,5 @@ public partial class Camera : Camera2D
     public void SetTargetPosition(Vector2 position)
     {
         Position = position;
-    }
-
-    private void UpdateBackground()
-    {
-        // var viewportSize = GetViewport().GetVisibleRect().Size / Zoom;
-        // _background.Scale = viewportSize;
-        // _background.Position = -viewportSize / 2;
     }
 }
