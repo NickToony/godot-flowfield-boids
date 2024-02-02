@@ -4,11 +4,14 @@ This project combines **Flow Field Navigation** with **Boids** for a swarm movem
 
 The approach in this project would be suitable for an RTS or Vampire Survivors game.
 
+![Alt text](/screenshot/screenshot.png?raw=true "Example")
+
 # Features
 
 - Boids implementation for alignment/cohesion/seperation
 - Flow-field generation for generating a path from all possible points on a map to a single location
 - A simple Camera2D implementation for an RTS game
+- Lightweight avoidance of obstacles
 
 
 # Gotchas
@@ -18,14 +21,17 @@ The approach in this project would be suitable for an RTS or Vampire Survivors g
     - Same goes for setting values. Don't set a sprite offset every frame for example, only set it when it changes.
     - Don't use the 2d physics engine (RigidBody2D and Area2D). These are way too heavy when hundreds of agents.
         - Suggestion: Split entire map into sectors and only check if agent is nearby to agents within its own sector.
+        - Note: RigidBody2D and Area2D are only used in this example for neighbour detection. We avoid collisions altogether.
 
 - Unit overlap does occur. I consider this acceptable for my use-case, where I prefer sufficient seperation to be visually clear but enough leniency to keep movement fluid.
+    - Obstacle overlap can occur as well in some situations, but quickly resolves itself.
 
 - Flow fields are not cheap to dynamically generate for each individual route (~10ms per call). They're only really efficient for large swarms or if precomputed.
 
 # TODO
 
 - Investigate efficient ways to reduce overlap and jitter
+- Use floats to have less binary directions
 
 # Credits
 
